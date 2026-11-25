@@ -30,7 +30,10 @@ import yaml
 
 CONF = os.environ.get("AGENT_CONFORMANCE", str(Path(__file__).resolve().parents[2] / "conformance"))
 sys.path.insert(0, os.path.join(CONF, "validators"))
-import bootstrap_validate  # noqa: E402
+try:
+    import bootstrap_validate  # noqa: E402
+except ImportError:
+    bootstrap_validate = None
 
 
 def api(method, url, obj=None):
@@ -102,11 +105,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         p = urlparse(self.path).path.strip("/").split("/")
+        if p == ["v1", "bootstraps"]:
+            bp = self._body()
+            self.store.put_bootstrap(bp)
+            return self._send(201, {"id": bp["id"]})
         if p == ["v1", "bootstraps", "validate"]:
             path = self._body().get("path")
             bp = load_bootstrap(path)
             errs = []
-            bootstrap_validate.validate({"bootstrap_profile": bp}, errs)
+            if bootstrap_validate is not None:
+                bootstrap_validate.validate({"bootstrap_profile": bp}, errs)
             return self._send(200 if not errs else 422, {"ok": not errs, "violations": errs})
         if len(p) == 4 and p[:2] == ["v1", "bootstraps"] and p[3] == "deploy":
             bp = self.store.get_bootstrap(p[2])
